@@ -70,6 +70,94 @@ app.get("/api",auth,(req,res)=>{
 
 })
 
- app.listen(3000,()=>{
+
+
+app.post('/forgot-password', async (req, res) => {
+
+   const { email } = req.body;
+
+   try {
+
+      const user = await User.findOne({ email });
+
+      if (!user) {
+         return res.status(404).send('User not found');
+      }
+
+      // Generate reset token
+      const resetToken = jwt.sign(
+         { email: user.email },
+         "hehehehehe",
+         { expiresIn: "10m" }
+      );
+
+      // Save token and expiry
+      user.resetToken = resetToken;
+      user.resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      await user.save();
+
+      // For testing in Thunder Client
+      res.json({
+         msg: "Reset token generated",
+         token: resetToken
+      });
+
+   } catch (error) {
+
+      res.status(500).send(
+         'Error generating reset token: ' + error.message
+      );
+
+   }
+
+});
+
+
+app.post('/reset-password/:token', async (req, res) => {
+
+   const { token } = req.params;
+   const { newPassword } = req.body;
+
+   try {
+
+      const user = await User.findOne({
+         resetToken: token,
+         resetTokenExpiry: { $gt: Date.now() }
+      });
+
+      if (!user) {
+         return res.status(400).send('Invalid or expired token');
+      }
+
+      // Hash the new password
+      const hashedPassword = await bcryptjs.hash(newPassword, 10);
+
+      // Update password
+      user.passWord = hashedPassword;
+
+      // Remove reset token
+      user.resetToken = undefined;
+      user.resetTokenExpiry = undefined;
+
+      await user.save();
+
+      res.status(200).send('Password reset successfully');
+
+   } catch (error) {
+
+      res.status(500).send(
+         'Error resetting password: ' + error.message
+      );
+
+   }
+
+});
+
+
+app.listen(3000, () => {
    console.log("server......");
- })
+});
+
+
+
