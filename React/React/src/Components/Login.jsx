@@ -136,6 +136,7 @@ function Login() {
           <button type="submit">
             Login
           </button>
+          <link to={'Reset'}>Forget Pass</link>
 
         </form>
 

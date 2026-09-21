@@ -1,78 +1,159 @@
-let cors = require("cors")
-let express= require("express")
-let mongoose=   require('mongoose')
-let bcryptjs=  require('./node_modules/bcryptjs/umd/index.js')
-let jwt = require('jsonwebtoken')
-let app=  express()
-let User=  require('./db/db.js')
-app.use(express.json())
-app.use(cors())
+let express = require("express");
+let mongoose = require("mongoose");
+let bcryptjs = require("bcryptjs");
+let cors = require("cors");
+let jwt = require("jsonwebtoken");
+let crypto = require("crypto");
 
-mongoose.connect("mongodb://127.0.0.1:27017/db").then(()=>{
-   console.log("db......");
-   
-})
-app.post("/signUp", async(req,res)=>{
-   let {name,email,passWord ,role}=req.body
-  let findData=   await User.findOne({email})
-  console.log(findData,"hjehehe");
-  if(findData){
-   return res.send("user jinda haii....")
-  }else{
-     let updateddP = await bcryptjs.hash(passWord,10)
+let app = express();
 
-     console.log(updateddP,"dekhoooooo");
-     
- let UserInfo=  new User({
-      name,email,
-      passWord:updateddP,
-      role:role||'user'
-   
+let User = require("./db/db.js");
+let { sendEmail } = require("./sendEmail.js");
+const { log } = require("console");
 
+app.use(express.json());
+app.use(cors());
+
+
+// ================= DATABASE =================
+
+mongoose.connect("mongodb://127.0.0.1:27017/db")
+   .then(() => {
+      console.log("db......");
    })
-      await UserInfo.save()
-      res.send("done.......")
-  }
-})
-app.post('/login', async(req,res)=>{
-   let {email,passWord}=req.body
+   .catch((error) => {
+      console.log("Database connection error:", error);
+   });
 
- let findData=   await User.findOne({email})    
- console.log(findData,"heheh");
 
- let validP= await   bcryptjs.compare(passWord,findData.passWord)
- if(!validP){
-   return res.send("kuch nhi ho payega aapse.....")
- }
+// ================= SIGNUP =================
 
-  let token=jwt.sign({email:findData.email,role:findData.role},"hehehehehe")
-  console.log(token,"hehe");
+app.post("/signUp", async (req, res) => {
 
- res.json({msg:"done",token:token})
+   let { name, email, passWord, role } = req.body;
 
-})
+   let findData = await User.findOne({ email });
 
-let auth=(req,res,next)=>{
-   let token=req.headers.authorization;
-   console.log(token,"tokenn");
-   
-   if(!token){
-      return res.send("kaun hai app...")
+   console.log(findData, "hjehehe");
+
+   if (findData) {
+      return res.send("user jinda haii....");
    }
-  let decode=  jwt.verify(token,"hehehehehe")
-  console.log(decode,"isse");
-  next()
-}
+
+   let updateddP = await bcryptjs.hash(passWord, 10);
+
+   console.log(updateddP, "dekhoooooo");
+
+   let UserInfo = new User({
+      name,
+      email,
+      passWord: updateddP,
+      role: role || "user"
+   });
+
+   await UserInfo.save();
+
+   res.send("done.......");
+});
 
 
-app.get("/api",auth,(req,res)=>{
-   res.send("heheh")
+// ================= LOGIN =================
 
-})
+app.post("/login", async (req, res) => {
+
+   let { email, passWord } = req.body;
+
+   let findData = await User.findOne({ email });
+
+   console.log(findData, "heheh");
+
+   if (!findData) {
+      return res.send("User not found");
+   }
+
+   let validP = await bcryptjs.compare(
+      passWord,
+      findData.passWord
+   );
+
+   if (!validP) {
+      return res.send("kuch nhi ho payega aapse.....");
+   }
+
+   let token = jwt.sign(
+      {
+         id: findData._id,
+         email: findData.email,
+         role: findData.role
+      },
+      "hehehehehe"
+   );
+
+   console.log(token, "hehe");
+
+   res.json({
+      msg: "done",
+      token: token
+   });
+});
 
 
+// ================= AUTHORIZATION =================
 
-app.post('/forgot-password', async (req, res) => {
+let auth = (req, res, next) => {
+
+   let token = req.headers.authorization;
+
+   console.log(token, "toeknn");
+
+   if (!token) {
+      return res.send("kaun hai app...");
+   }
+
+   let decode = jwt.verify(
+      token,
+      "hehehehehe"
+   );
+
+   console.log(decode, "isse");
+
+   req.user = decode;
+
+   next();
+};
+
+
+// ================= ROLE CHECK =================
+
+let roleCheck = (role) => {
+
+   return (req, res, next) => {
+
+      if (req.user.role !== role) {
+         return res.send("who the hell are u...........");
+      }
+
+      next();
+   };
+};
+
+
+// ================= ADMIN =================
+
+app.get(
+   "/admin",
+   auth,
+   roleCheck("admin"),
+   (req, res) => {
+
+      res.send("hello only admin can acces me!");
+   }
+);
+
+
+// ================= FORGOT PASSWORD =================
+
+app.post("/forgot-password", async (req, res) => {
 
    const { email } = req.body;
 
@@ -81,83 +162,98 @@ app.post('/forgot-password', async (req, res) => {
       const user = await User.findOne({ email });
 
       if (!user) {
-         return res.status(404).send('User not found');
+         return res.status(404).send("User not found");
       }
 
-      // Generate reset token
-      const resetToken = jwt.sign(
-         { email: user.email },
-         "hehehehehe",
-         { expiresIn: "10m" }
-      );
+      const resetToken = crypto
+         .randomBytes(20)
+         .toString("hex");
 
-      // Save token and expiry
       user.resetToken = resetToken;
-      user.resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      user.resetTokenExpiry =
+         Date.now() + 3600000;
 
       await user.save();
 
-      // For testing in Thunder Client
-      res.json({
-         msg: "Reset token generated",
-         token: resetToken
-      });
+      const resetUrl =
+         `http://localhost:3000/reset-password/${resetToken}`;
+
+      await sendEmail(
+         user.email,
+         "Password Reset Request",
+         `Click the link below to reset your password:\n\n${resetUrl}`
+      );
+
+      res
+         .status(200)
+         .send("Password reset email sent");
 
    } catch (error) {
 
-      res.status(500).send(
-         'Error generating reset token: ' + error.message
-      );
-
+      res
+         .status(500)
+         .send(
+            "Error sending password reset email: "
+            + error.message
+         );
    }
-
 });
 
 
-app.post('/reset-password/:token', async (req, res) => {
+// ================= RESET PASSWORD =================
 
-   const { token } = req.params;
-   const { newPassword } = req.body;
+app.post("/reset-password/:token", async (req, res) => {
 
-   try {
+   let { newP } = req.body;
 
-      const user = await User.findOne({
-         resetToken: token,
-         resetTokenExpiry: { $gt: Date.now() }
-      });
+   let { token } = req.params;
 
-      if (!user) {
-         return res.status(400).send('Invalid or expired token');
+   let user = await User.findOne({
+      resetToken: token,
+      resetTokenExpiry: {
+         $gt: Date.now()
       }
+   });
 
-      // Hash the new password
-      const hashedPassword = await bcryptjs.hash(newPassword, 10);
-
-      // Update password
-      user.passWord = hashedPassword;
-
-      // Remove reset token
-      user.resetToken = undefined;
-      user.resetTokenExpiry = undefined;
-
-      await user.save();
-
-      res.status(200).send('Password reset successfully');
-
-   } catch (error) {
-
-      res.status(500).send(
-         'Error resetting password: ' + error.message
-      );
-
+   if (!user) {
+      return res.send("invaliddd.......");
    }
 
-});
+   let updatedP =
+      await bcryptjs.hash(newP, 10);
 
+   user.passWord = updatedP;
+
+   user.resetToken = undefined;
+   user.resetTokenExpiry = undefined;
+
+   await user.save();
+
+   res.send("Password reset successful");
+});
+app.get('/error',(req,res)=>{
+   try{
+   let user=null
+   console.log(user.name);
+   console.log("hehehehe")
+   console.log("hey!!");
+   res.send("hello");
+
+}
+catch(err){
+   res.send("erororor",err)
+}
+})
+
+
+
+// ================= SERVER =================
 
 app.listen(3000, () => {
-   console.log("server......");
+
+   console.log(
+      "Server running on port 3000"
+   );
+
 });
-
-
-
