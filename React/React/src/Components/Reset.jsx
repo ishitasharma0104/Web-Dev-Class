@@ -2,8 +2,11 @@ import React from 'react'
 
 const Reset = () => {
   return (
-    <div>Reset
-      <input></input>
+    <div>
+      
+       <input/>
+       <button>reset</button>
+     
     </div>
   )
 }
